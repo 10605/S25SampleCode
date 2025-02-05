@@ -11,40 +11,40 @@ class BloomFilter(object):
         self.numBits = int(2 * maxInserts*math.log(1.0/falsePosProb) + 0.5)
         self.numHashes = int(1.5 * math.log(1.0/falsePosProb) + 0.5)
         self.bits = []
-        for i in xrange(self.numBits/BITS_PER_INT + 1):
+        for i in range(round(self.numBits/BITS_PER_INT + 1)):
             self.bits.append(int(0))
 
         rnd = random.Random()
         rnd.seed(seed)
         self.ithHashSeed = []
-        for i in xrange(self.numHashes):
+        for i in range(self.numHashes):
             self.ithHashSeed.append(rnd.getrandbits(BITS_PER_INT))
 
     def ithHash(self,i,value):
         return (self.ithHashSeed[i] ^ hash(value)) % self.numBits
 
     def insert(self,value):
-        for i in xrange(self.numHashes):
+        for i in range(self.numHashes):
             hi = self.ithHash(i,value)
             self.setbit(hi)
 
     def contains(self,value):
-        for i in xrange(self.numHashes):
+        for i in range(self.numHashes):
             hi = self.ithHash(i,value)
             if not self.testbit(hi): return False
         return True
 
     def setbit(self,index):
-        self.bits[index/BITS_PER_INT] = int(self.bits[index/BITS_PER_INT] | (1 << (index % BITS_PER_INT)))
+        self.bits[index//BITS_PER_INT] = int(self.bits[index//BITS_PER_INT] | (1 << (index % BITS_PER_INT)))
 
     def testbit(self,index):
-        return self.bits[index/BITS_PER_INT] & (1 << (index % BITS_PER_INT))
+        return self.bits[index//BITS_PER_INT] & (1 << (index % BITS_PER_INT))
 
     def density(self):
         numBits = 0.0
         numBitsSet = 0.0
         for bi in self.bits:
-            for j in xrange(BITS_PER_INT):
+            for j in range(BITS_PER_INT):
                 numBits += 1
                 if bi & (1 << j):
                     numBitsSet += 1
@@ -59,7 +59,7 @@ if __name__=="__main__":
         file1 = sys.argv[3]
         file2 = sys.argv[4]
     except IndexError:
-        print 'usage: n p file1 file2'
+        print('usage: n p file1 file2')
         sys.exit(-1)
     bf = BloomFilter(maxInserts=n,falsePosProb=p)
     lines1 = lines2 = overlap = 0
@@ -67,16 +67,15 @@ if __name__=="__main__":
     for line in fp1:
         if line.strip(): bf.insert(line.strip())
         lines1 += 1
-    print 'bit size',bf.numBits,'kb size',bf.numBits/(8.0*1024)
-    print 'numhashes',bf.numHashes
-    print 'density',bf.density()
+    print('bit size',bf.numBits,'kb size',bf.numBits/(8.0*1024))
+    print('numhashes',bf.numHashes)
+    print('density',bf.density())
     fp2 = open(file2)
     for line in fp2:
         if line.strip() and bf.contains(line.strip()): 
             overlap += 1
-            #print 'common line:',line.strip()
         lines2 += 1
-    print 'lines1',lines1
-    print 'lines2',lines2
-    print 'overlap',overlap
-    print bf.bits[0:10]
+    print('lines in', file1, lines1)
+    print('lines in', file2, lines2)
+    print('overlap estimated by Bloom filter',overlap)
+
