@@ -1,14 +1,19 @@
+# Simple example of reverse-mode autodifferentiation
+
 import collections
 
+# A Wengert list
 PROGRAM = [('z1', 'add', ['x1', 'x1']),
            ('z2', 'add', ['z1', 'x2']),
            ('f', 'square', ['z2'])]
 
+# Function library
 G = {
     'add':      lambda x1,x2: x1 + x2,
     'square':   lambda x: x * x
 }
 
+# Partial derivatives of each function wrt each input
 DG = {
     'add': [lambda x1,x2: 1, lambda x1,x2: 1],
     'square': [lambda x: 2.0 * x],
