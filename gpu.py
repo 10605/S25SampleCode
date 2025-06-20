@@ -45,7 +45,7 @@ def copy_fn():
     a.to(device)
     b.to(device)
 
-show_timing(copy_fn, 'copy', 100)
+show_timing(copy_fn, 'copy', 1000)
 
 # report
 

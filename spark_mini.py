@@ -1,31 +1,42 @@
+from __future__ import annotations
+
+
 from dataclasses import dataclass
 import json
 import subprocess
 from typing import Callable, Iterable
 
-REDUCE_BUFFER_FILE = '.reduce_buffer.tsv'
-SORT_BUFFER_FILE = '.sort_buffer.tsv'
+REDUCE_BUFFER_FILE = '_spark_mini-reduce_buffer.tsv'
+SORT_BUFFER_FILE = '_spark_mini-sort_buffer.tsv'
 
 class Context:
+    sort_on_disk: bool = False
 
-    @staticmethod
-    def textFile(fileName: str):
-        return TextFile(fileName)
+    def textFile(self, fileName: str):
+        return TextFile(self, fileName)
+
+    def asRDD(self, xs: list):
+        return IteratorRDD(self, xs)
 
 class RDD:
+    context: Context
+
     def _contents(self):
         """Generate each thing in the RDD.
         """
         assert False, 'abstract method called'
 
     def map(self, fn) -> RDD:
-        return Mapper(upstream=self, map_fn=fn)
+        return Mapper(context=self.context, upstream=self, map_fn=fn)
 
     def reduceByKey(self, fn) -> RDD:
-        return Reducer(upstream=self, reduce_fn=fn)
+        if self.context.sort_on_disk:
+            return DiskReducer(context=self.context, upstream=self, reduce_fn=fn)
+        else:
+            return Reducer(context=self.context, upstream=self, reduce_fn=fn)
 
     def flatMap(self, fn) -> RDD:
-        return FlatMapper(upstream=self, map_fn=fn)
+        return FlatMapper(context=self.context, upstream=self, map_fn=fn)
 
     def collect(self) -> list:
         return list(self._contents())
@@ -39,6 +50,7 @@ class RDD:
 
 @dataclass
 class TextFile(RDD):
+    context: Context
     fileName: str
 
     def _contents(self):
@@ -46,7 +58,17 @@ class TextFile(RDD):
             yield line
     
 @dataclass
+class IteratorRDD(RDD):
+    context: Context
+    contents: Iterable
+
+    def _contents(self):
+        for x in self.contents:
+            yield x
+
+@dataclass
 class Mapper(RDD):
+    context: Context
     upstream: RDD
     map_fn: Callable
 
@@ -56,6 +78,7 @@ class Mapper(RDD):
 
 @dataclass
 class FlatMapper(RDD):
+    context: Context
     upstream: RDD
     map_fn: Callable
 
@@ -66,6 +89,7 @@ class FlatMapper(RDD):
 
 @dataclass
 class Reducer(RDD):
+    context: Context
     upstream: RDD
     reduce_fn: Callable
 
@@ -80,23 +104,20 @@ class Reducer(RDD):
 
     def _contents(self):
         # complicated but fairly general
-        def flush(buffer):
-            # output the key and reduced value
-            for key, value in buffer.items():
-                yield (key, value)
-            # return a new empty buffer
-            return {}
-
         buffer = {}
         for key, value in self._sorted_upstream_contents():
             if key in buffer:
                 # reduce new value with the existing aggregation
                 buffer[key] = self.reduce_fn(buffer[key], value)
             else:
-                buffer = flush(buffer)  # no result when it's empty
+                # flush buffer
+                for stored_kv in buffer.items():
+                    yield stored_kv
+                buffer.clear()
                 buffer[key] = value
-            flush(buffer)
-
+        # flush buffer
+        for stored_kv in buffer.items():
+            yield stored_kv
 
 @dataclass
 class DiskReducer(Reducer):
@@ -127,15 +148,3 @@ class DiskReducer(Reducer):
         for line in open(SORT_BUFFER_FILE):
             str_key, str_value = line.rstrip().split('\t')
             yield json.loads(str_key), json.loads(str_value)
-
-if __name__ == '__main__':
-
-    sc = Context()
-    wc = sc.textFile('data/redcorpus.txt') \
-        .map(lambda line:line.split(' ')) \
-        .flatMap(lambda word: (word, 1)) \
-        .reduceByKey(lambda a,b: a+b)
-
-    lines = TextFile('data/redcorpus.txt')
-    wordlists = lines.map(lambda line:line.lower().split(' '))
-    wordpairs = wordlists.flatMap(lambda word: (word, 1))
