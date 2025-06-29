@@ -16,13 +16,25 @@ class Context:
         return TextFile(self, fileName)
 
     def asRDD(self, xs: list):
-        return IteratorRDD(self, xs)
+        return ListRDD(self, xs)
+
+#
+# thoughts: 
+#  could have RDDs be convertible to a PlanStep
+#
+#    - PlanStep version ps of rdd is basically a copy, but binding
+#      'upstream' to a special object which with _contents() that
+#      streams from a file, and ps also has an _doStep() method calls
+#      _contents() and stores results in a file.
+#
+#   - actions would need to create a Plan (list of PlanSteps) and
+#     execute that plan - which could be done remotely.
 
 class RDD:
     context: Context
 
     def _contents(self):
-        """Generate each thing in the RDD.
+        """Generator producing each thing in the RDD.
         """
         assert False, 'abstract method called'
 
@@ -58,9 +70,9 @@ class TextFile(RDD):
             yield line
     
 @dataclass
-class IteratorRDD(RDD):
+class ListRDD(RDD):
     context: Context
-    contents: Iterable
+    contents: list
 
     def _contents(self):
         for x in self.contents:
@@ -84,8 +96,11 @@ class FlatMapper(RDD):
 
     def _contents(self):
         for x in self.upstream._contents():
-            for y in x:
-                yield self.map_fn(y)
+            for y in self.map_fn(x):
+                yield y
+
+# TODO use defaultdict to collect pairs
+# move disk to utils
 
 @dataclass
 class Reducer(RDD):
@@ -103,7 +118,7 @@ class Reducer(RDD):
         return pairs
 
     def _contents(self):
-        # complicated but fairly general
+        # complicated but general enough to use with DiskReducer
         buffer = {}
         for key, value in self._sorted_upstream_contents():
             if key in buffer:
