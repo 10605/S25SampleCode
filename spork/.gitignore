@@ -1,0 +1,6 @@
+*.pem
+workers.txt
+*.csv
+fire_trial.py
+__pycache__/*
+#*

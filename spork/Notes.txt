@@ -1,0 +1,63 @@
+6/30
+
+Commands/ptrs for aws ec2
+ - console https://us-east-2.console.aws.amazon.com/ec2/home?region=us-east-2#Instances:v=3;$case=tags:true%5C,client:false;$regex=tags:false%5C,client:false;sort=desc:instanceState
+ - get instance ips:
+   aws ec2 describe-instances | grep -i publicipadd | cut -d\" -f4
+ - stop instances
+    aws ec2 stop-instances --instance-ids `aws ec2 describe-instances | grep -i instanceid | cut -d\" -f4`
+ - log in 
+    ssh -i hazsoup.pem ec2-user@ec2-3-144-108-49.us-east-2.compute.amazonaws.com
+
+ - when creating the cluster you need to specify a pre-build keypair (hazsoup)
+
+Blockers:
+  - instances have python3.9, but not pip or pip3
+  - looks like I will need to install each of those using 'yum'
+  - I was able to ssh into an Amazon linux cluster, but not a
+	
+
+https://google.github.io/python-fire/guide/
+
+in gpig
+ - views (=rdds) have 'checkpoints' and 'checkpoint plans'
+ - views produce a storagePlan which is executed to produce the relation
+ - a plan 
+    - is compiled to a script that can be executed by the shell
+      - compilers treat multi-input commands separately
+    - is steps that are grouped into AbstractMapReduceTask
+    - an AbstractMapReduceTask
+       - has distribute steps, 0/1 map step, and 0/1 reduce step
+         - distribute steps are special 'hadoop fs -getmerge SRC DST'
+
+the main
+ - allows you to call it with args '-do METHOD.ARG -view v' which means
+   to perform some part of the preprocessing for a view
+   - doStoreKeyedRows for map/reduce
+   - doStoreRows
+   - doDistinctMap
+   - rowGenerator methods all read from stdin
+
+micro spork:
+ - adds machinery to produce plan and execute it
+
+New idea: have separate map-reduce method using fire
+
+class Context:
+    workers: list
+    environment:
+    ...
+      def distribute(source: Iterator, dest: str):
+      	  """
+	  """
+    
+         
+
+define MyClass(MapReduce):
+   input: File
+   reducer_input: File
+   output: File
+   def map(x:any):
+       """Yields stuff."""
+   def reduce(key:any, value:Iterator)
+       """Returns one thing."""

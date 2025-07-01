@@ -6,163 +6,33 @@ import collections
 import fire
 import json
 import os
+from pprint import pprint
 from subprocess import Popen, PIPE
 from subprocess import run as run_subproc
-from subprocess import run as run_subproc
+import shlex
+import sys
 import time
 from tqdm import tqdm
 
-class FileSystem:
-    """Lightweight distributed file system.
-    """
-    cwd: str
-    workers: list[str]
+WORKER_PYTHON = 'python3'
+DEFAULT_CONFIG_FILE = 'cloud_config.json'
 
-    def __init__(self, config_file='mr-config.json'):
-        """Load state previously specified with 'config' from disk.
-        """
-        try:
-            with open(config_file) as fp:
-                config = json.load(fp)
-                print(f'{config=}')
-            self.cwd = config['cwd']
-            self.workers = config['workers']
-        except FileNotFoundError:
-            print(f'warning: no config at {config_file}')
-
-    def config(self, cwd, workers, config_file='mr-config.json'):
-        """Configure working directory and list of remote workers for
-        subsequent command-line calls.
-        """
-        with open(config_file, 'w') as fp:
-            config = dict(cwd=cwd, workers=workers.split(","))
-            json.dump(config, fp)
-            print(f'configuration at {config_file}')
-
-    # utils
-
-    def _worker_file(self, filename):
-        """Location of file for a remote worker."""
-        return f'{self.cwd}/{filename}'
-
-    # file system commands
-
-    def ls(self, opts='lh', pattern='*'):
-        """List files matching the pattern on each remote worker.
-
-        Opts are options for 'ls', as a single string with no leading
-        dash.
-        """
-        for worker in self.workers:
-            proc = run_subproc(
-                f'ssh {worker} ls -{opts} {self._worker_file(pattern)}',
-                capture_output=True, text=True, shell=True)
-            print(worker.center(60, '-'))
-            print(proc.stdout, end='')
-            if proc.stderr:
-                print(' !! error !! '.center(60, '-'))
-                print(proc.stderr, end='')
-
-    def put(self, src, dst):
-        """Shard a local file and upload shards to the workers.
-        """
-        line_ctr = collections.Counter()
-        # create a process for each worker that can accept text lines
-        # via its stdin
-        worker_processes = [
-            Popen(f'ssh {worker} "cat > {self._worker_file(dst)}"',
-                  text=True, shell=True, stdin=PIPE)
-            for worker in self.workers
-        ]
-        # upload the local file
-        for line in open(src):
-            # send line to the worker with this index
-            worker_idx = hash(line) % len(self.workers)
-            worker_processes[worker_idx].stdin.write(line)
-            # record some statistics
-            line_ctr[src] += 1
-            line_ctr[f'{self.workers[worker_idx]}:{dst}'] += 1
-        # close the worker processes and wait for them to finish
-        for proc in worker_processes:
-            proc.stdin.close()
-            proc.wait()
-        # echo statistics
-        print(line_ctr)
-        
-    def get_merge(self, src, dst):
-        """Get remote shards and collect them into a local file.
-        """
-        line_ctr = collections.Counter()
-        with open(dst, 'w') as fp:
-            for worker in self.workers:
-                # download the data from that worker to local file
-                proc = Popen(
-                    f'ssh {worker} "cat < {self._worker_file(src)}"',
-                    text=True, shell=True, stdout=PIPE)
-                for line in proc.stdout:
-                    fp.write(line)
-                    # record some statistics
-                    line_ctr[f'{worker}:{src}'] += 1
-                    line_ctr[dst] += 1
-                # wait for process to end
-                proc.wait()
-        # echo statistics
-        print(line_ctr)
-
-    def head(self, src):
-        worker = self.workers[0]
-        proc = run_subproc(
-            f'ssh {worker} "head {self._worker_file(src)}"',
-            capture_output=True, text=True, shell=True)
-        print(proc.stdout, end='')
-
-    def tail(self, src):
-        worker = self.workers[-1]
-        proc = run_subproc(
-            f'ssh {worker} "tail {self._worker_file(src)}"',
-            capture_output=True, text=True, shell=True)
-        print(proc.stdout, end='')
-
-    # TODO: upload files to workers
-    def init_workers(self, *files):
-        """
-        """
-        # make sure cwd exists on each worker, and upload
-        # hazsoup.py and other files there
-        ...
-        
 class Worker:
     """An abstract worker for map-reduce tasks.
     """
-
-    def _worker_file(self, cwd, filename):
-        """Location of file for a remote worker."""
-        return f'{cwd}/{filename}'
-
-    # utility routines for mappers and reducers
-
-    def as_str(self, obj):
-        """Convert a Python object to a string.
-        """
-        return str(obj)
-
-    def from_str(self, serialized_obj: str):
-        """Convert a string back to a Python object.
-        """
-        return ast.literal_eval(serialized_obj)
 
     # abstract routines to be implemented by instances via worker.map
     # and then executed by commands like
 
     # py -m fire hs_wc.py MyWorker do_map DIR SRC DST
 
-    def do_map(self, cwd, src, dst):
+    def do_map(self, src, dst):
         """
         """
-        with open(self._worker_file(cwd, dst), 'w') as fp:
-            for line in open(self._worker_file(cwd, src)):
+        with open(dst, 'w') as fp:
+            for line in open(src):
                 for x in self.map(line):
-                    fp.write(self.as_str(x) + '\n')
+                    fp.write(x + '\n')
 
     def map(self, x):
         """Yield one or more items. 
@@ -197,19 +67,184 @@ class Worker:
         """
         assert False, 'unimplemented'
 
+class CloudBase:
+    """Base class for working with an ec2 cloud.
+    """
+    def __init__(self, config_file=DEFAULT_CONFIG_FILE):
+        """Load state previously specified with 'config' from disk.
+        """
+        try:
+            with open(config_file) as fp:
+                config = json.load(fp)
+            for key, value in config.items():
+                setattr(self, key, value)
+        except FileNotFoundError:
+            print(f'warning: no config at {config_file}')
+            self.cloud_username = 'ec2-user'
+            self.keypair_file = 'hazsoup.pem'
+            self.workers = None
+
+    def _defined_attr(self):
+        """Externally visible attributes of this object.
+        """
+        return [a for a in self.__dict__ if not a.startswith('_')]
+
+    def _save(self, config_file=DEFAULT_CONFIG_FILE):
+        """Save the defined attribute values to the config file.
+        """
+        with open(config_file, 'w') as fp:
+            config = {a:getattr(self, a) for a in self._defined_attr()}
+            json.dump(config, fp)
+        print(f'saved to {config_file}: {self._defined_attr()}')
+
+    def setattr(self, attr, value, split=True, config_file=DEFAULT_CONFIG_FILE):
+        """Set an attribute, like workers, keypair_file, or cloud_username.
+        """
+        if split:
+            value = value.split()
+        setattr(self, attr, value)
+        self._save()
+
+    def _report(self, proc, worker, stderr_pipe=False, stdout_pipe=False):
+        if proc.returncode:
+            print(f'returncode {worker}: {proc.returncode}')
+        def report_stdx(what, worker, wrapper_or_string, flag):
+            outp = wrapper_or_string.read() if flag else wrapper_or_string
+            if outp:
+                print(f'{what} {worker}'.center(60, '='))
+                print(outp, end='')
+        report_stdx('stdout', worker, proc.stdout, stdout_pipe)
+        report_stdx('stderr', worker, proc.stderr, stderr_pipe)
+
+    def run_all(self, command):
+        """Run a shell command on all workers.
+        """
+        for worker in self.workers:
+            sh_tokens = (['ssh', '-i', self.keypair_file]
+                         + [f'{self.cloud_username}@{worker}']
+                         + shlex.split(command))
+            proc = run_subproc(sh_tokens, capture_output=True, text=True)
+            self._report(proc, worker)
+                
+    def upload_all(self, filenames):
+        """Copy a file to all workers.
+        """
+        for worker in tqdm(self.workers):
+            sh_tokens = (
+                ['scp', '-i', self.keypair_file]
+                + shlex.split(filenames)
+                + [f'{self.cloud_username}@{worker}:'])
+            proc = run_subproc(sh_tokens, capture_output=True, text=True)
+            self._report(proc, worker)
+
+    def init_ec2(self):
+        """Commands needed to initialize an ec2 cluster.
+        """
+        self.run_all("sudo yum install python3-pip -y")
+        self.run_all("pip3 install fire")
+        self.upload_all("hz_worker.py")
+
+
+class FileSystem(CloudBase):
+
+    def put(self, src, dst):
+        """Shard a local file and upload shards to the workers.
+        """
+        line_ctr = collections.Counter()
+        # create a process for each worker that can accept text lines
+        # via its stdin
+        def sh_tokens(worker):
+            return (['ssh', '-i', self.keypair_file]
+                    + [f'{self.cloud_username}@{worker}']
+                    + shlex.split(f'cat > {dst}'))
+        worker_processes = [
+            Popen(sh_tokens(worker), text=True, stdin=PIPE)
+            for worker in self.workers
+        ]
+        # upload the local file
+        for line in tqdm(open(src)):
+            # send line to the worker with this index
+            worker_idx = hash(line) % len(self.workers)
+            worker_processes[worker_idx].stdin.write(line)
+            # record some statistics
+            line_ctr[src] += 1
+            line_ctr[f'{self.workers[worker_idx]}:{dst}'] += 1
+        # close the worker processes and wait for them to finish
+        for proc in tqdm(worker_processes):
+            proc.stdin.close()
+            proc.wait()
+        # echo statistics
+        pprint(line_ctr)
+        
+    def get_merge(self, src, dst):
+        """Get remote shards and collect them into a local file.
+        """
+        line_ctr = collections.Counter()
+        def sh_tokens(worker):
+            return (['ssh', '-i', self.keypair_file]
+                    + [f'{self.cloud_username}@{worker}']
+                    + shlex.split(f'cat < {src}'))
+        with open(dst, 'w') as fp:
+            for worker in tqdm(self.workers):
+                # download the data from that worker to local file
+                proc = Popen(
+                    sh_tokens(worker), text=True, stdout=PIPE)
+                for line in proc.stdout:
+                    fp.write(line)
+                    # record some statistics
+                    line_ctr[f'{worker}:{src}'] += 1
+                    line_ctr[dst] += 1
+                # wait for process to end
+                proc.wait()
+        # echo statistics
+        pprint(line_ctr)
+
+    def head(self, src):
+        worker = self.workers[0]
+        proc = run_subproc(
+            f'ssh {worker} "head {self._worker_file(src)}"',
+            capture_output=True, text=True, shell=True)
+        print(proc.stdout, end='')
+
+    def tail(self, src):
+        worker = self.workers[-1]
+        proc = run_subproc(
+            f'ssh {worker} "tail {self._worker_file(src)}"',
+            capture_output=True, text=True, shell=True)
+        print(proc.stdout, end='')
+
+        
 
 # TODO
-class Driver:
+class Driver(CloudBase):
     """Invokes the workers appropriately to complete a task.
     """
 
-    def map_only(src, dst, *scripts):
-        ...
+    def map_only(self, src, dst, main_script, main_class):
+        """Run a map-only job.
+        """
+        def map_command(worker):
+            return ['ssh', '-i', self.keypair_file,
+                    f'{self.cloud_username}@{worker}',
+                    WORKER_PYTHON, '-m', 'fire', main_script, main_class, 
+                   'do_map', 
+                    '--src', src,
+                    '--dst', dst] 
+        processes = [
+            Popen(map_command(worker), text=True, stderr=PIPE, stdout=PIPE)
+            for worker in self.workers]
+        for worker in self.workers:
+            print('launched:', ' '.join(map_command(worker)))
+        for proc, worker in zip(processes, self.workers):
+            proc.wait()
+            self._report(proc, worker, stderr_pipe=True, stdout_pipe=True)
 
-    def map_reduce(src, dst, *scripts):
+    def map_reduce(self, src, dst, scripts):
         ...
     
 if __name__ == "__main__":
-    #fire.Fire(dict(fs = FileSystem))
-    test = ((key, ch) for key in 'william w cohen'.split() for ch in key)
-    rrd = ReduceReadyData(test)
+    if len(sys.argv) > 1:
+        fire.Fire(dict(
+            fs = FileSystem,
+            run = Driver,
+            cloud = CloudBase))
