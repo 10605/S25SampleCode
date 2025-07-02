@@ -14,6 +14,7 @@ import sys
 import time
 from tqdm import tqdm
 
+#TODO replace with just workers.txt file?
 DEFAULT_CONFIG_FILE = 'cloud_config.json'
 
 
@@ -33,6 +34,8 @@ class CloudBase:
             self.cloud_username = 'ec2-user'
             self.keypair_file = 'hazsoup.pem'
             self.workers = None
+
+    #TODO "def ssh_cmd(worker, command)"
 
     def _defined_attr(self):
         """Externally visible attributes of this object.
@@ -71,7 +74,7 @@ class CloudBase:
         """
         def report_stdx(what, proc_stdx, worker):
             # report proc.stdout or proc.stderr
-            outp = proc_stdx if isinstance(proc_stdx) else proc_stdx.read()
+            outp = proc_stdx if isinstance(proc_stdx, str) else proc_stdx.read()
             if outp:
                 print(f'{what} {worker}'.center(60, '='))
                 print(outp, end='')
@@ -90,7 +93,7 @@ class CloudBase:
             proc = run_subproc(sh_tokens, capture_output=True, text=True)
             self._report(proc, worker)
                 
-    def pssh(self, command):
+    def sshp(self, command):
         """Run a shell command on all workers in parallel.
         """
         processes = [
@@ -101,22 +104,33 @@ class CloudBase:
             for worker in self.workers]
         self._completion_progress(processes)
         for proc, worker in zip(processes, self.workers):
-            self._report(proc, worker, stdout_pipe=True, stderr_pipe=True)
+            self._report(proc, worker)
             proc.wait()
 
     def ssh1(self, command):
         """Run a shell command on one worker.
         """
-        processes = [
-            Popen(['ssh', '-i', self.keypair_file,
-                   f'{self.cloud_username}@{worker}']
-                  + shlex.split(command),
-                  stderr=PIPE, stdout=PIPE, text=True)
-            for worker in self.workers[:1]
-        self._completion_progress(processes)
-        for proc, worker in zip(processes, self.workers[:1]):
-            self._report(proc, worker)
-            proc.wait()
+        worker = self.workers[0]
+        proc = run_subproc(
+            ['ssh', '-i', self.keypair_file,
+             f'{self.cloud_username}@{worker}']
+            + shlex.split(command),
+            capture_output=True, text=True)
+        self._report(proc, worker)
+
+    def setup_ec2(self):
+        """Commands needed to initialize an ec2 cluster.
+        """
+        print('installing pip')
+        self.sshp("sudo yum install python3-pip -y")
+        print('installing fire')
+        self.sshp("pip3 install fire")
+        print('uploading core')
+        self.upload(
+            f"hz_worker.py reduce_util.py {DEFAULT_CONFIG_FILE} {self.keypair_file}")
+        self.sshp(f"chmod 400 {self.keypair_file}")
+
+class FileSystem(CloudBase):
 
     def upload(self, filenames):
         """Copy a file to all workers.
@@ -128,20 +142,6 @@ class CloudBase:
                 + [f'{self.cloud_username}@{worker}:'])
             proc = run_subproc(sh_tokens, capture_output=True, text=True)
             self._report(proc, worker)
-
-    def setup_ec2(self):
-        """Commands needed to initialize an ec2 cluster.
-        """
-        print('installing pip')
-        self.run_allp("sudo yum install python3-pip -y")
-        print('installing fire')
-        self.run_allp("pip3 install fire")
-        print('uploading core')
-        self.upload_all(
-            f"hz_worker.py reduce_util.py {DEFAULT_CONFIG_FILE} {self.keypair_file}")
-        self.run_allp(f"chmod 400 {self.keypair_file}")
-
-class FileSystem(CloudBase):
 
     def put(self, src, dst):
         """Shard a local file and upload shards to the workers.
@@ -225,26 +225,14 @@ class Driver(CloudBase):
     def map_only(self, main_script, main_class, src, dst):
         """Run a map-only job.
         """
-        def map_command(worker):
-            return ['ssh', '-i', self.keypair_file,
-                    f'{self.cloud_username}@{worker}',
-                    'python3', '-m', 'fire', main_script, main_class, 
-                   'do_map', 
-                    '--src', src,
-                    '--dst', dst] 
-        processes = [
-            Popen(map_command(worker), text=True, stderr=PIPE, stdout=PIPE)
-            for worker in self.workers]
-        for worker in self.workers:
-            print('launched:', ' '.join(map_command(worker)))
-        self._completion_progress(processes)
-        for proc, worker in tqdm(zip(processes, self.workers)):
-            self._report(proc, worker, stderr_pipe=True, stdout_pipe=True)
-            proc.wait()
+        self.sshp(f'python3 -m fire {main_script} {main_class}'
+                  + f' do_map --src {src} --dst {dst}')
 
-    def map_reduce(self, src, dst, scripts):
+    def map_reduce(self, main_script, main_class, src, dst):
 
-        # shuffle phase
+        print('map and shuffle phase')
+        # shuffle phase - cannot use sshp since each command mentions
+        # is a different this_worker
         def shuffle_command(worker):
             return ['ssh', '-i', self.keypair_file,
                     f'{self.cloud_username}@{worker}',
@@ -256,14 +244,17 @@ class Driver(CloudBase):
         processes = [
             Popen(shuffle_command(worker), text=True, stderr=PIPE, stdout=PIPE)
             for worker in self.workers]
-        for worker in self.workers:
-            print('launched:', ' '.join(shuffle_command(worker)))
         self._completion_progress(processes)
         for proc, worker in tqdm(zip(processes, self.workers)):
-            self._report(proc, worker, stderr_pipe=True, stdout_pipe=True)
+            self._report(proc, worker)
             proc.wait()
 
-        # TODO: gather phase
+        print('gather and reduce phase')
+        # rather and reduce phase
+        self.sshp(f'python3 -m fire {main_script} {main_class}'
+                  + f' do_gather_reduce --src {src} --dst {dst}'
+                  + f' --config_file {DEFAULT_CONFIG_FILE}')
+        
 
     
 if __name__ == "__main__":

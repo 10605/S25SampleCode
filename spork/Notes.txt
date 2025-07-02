@@ -1,3 +1,14 @@
+7/2
+ Status: partly working but hz_worker.py do_map_and_scatter doesn't launch
+ jobs correctly ... mainly ssh is needs to be slacker about keys and not ask
+ so much, need to add "-o StrictHostKeyChecking=no" to all the ssh stuff
+ 
+
+ Cluster setup
+ - launch from console https://us-east-2.console.aws.amazon.com/ec2/home?region=us-east-2#Instances:v=3;$case=tags:true%5C,client:false;$regex=tags:false%5C,client:false;sort=desc:instanceState
+ - rm workers.txt; make workers.txt
+ - py hazsoup.py cloud setattr workers "`cat workers.txt`"
+
 6/30
 
 Commands/ptrs for aws ec2
@@ -15,7 +26,8 @@ Blockers:
   - instances have python3.9, but not pip or pip3
   - looks like I will need to install each of those using 'yum'
   - I was able to ssh into an Amazon linux cluster, but not a
-	
+
+  - used: sudo yum install python3-pip -y
 
 https://google.github.io/python-fire/guide/
 
