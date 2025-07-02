@@ -1,4 +1,26 @@
 from collections.abc import Iterator
+import json
+
+def kv_to_line(key, value) -> str:
+    """Convert a key-value pair into a sortable line.
+    """
+    return json.dumps(key) + '\t' + json.dumps(value) + '\n'
+
+def kv_from_line(line: str) -> tuple:
+    """Convert a sortable line into a key-value pair.
+    """
+    str_key, str_value = line.rstrip().split('\t')
+    return json.loads(str_key), json.loads(str_value)
+    
+def kv_keyhash(key) -> int:
+    """A hash code for the line-encoded key.
+    """
+    return hash(json.dumps(key))
+
+def sort_command(src: str, dst: str) -> str:
+    """Shell command that sorts the lines in src by key.
+    """
+    return f'LC_ALL=C sort -k1,2 -o {dst} {src}'
 
 class PushBackIterator(Iterator):
     """Extended Iterator that supports peek, has_more(), and pushback()
@@ -17,7 +39,7 @@ class PushBackIterator(Iterator):
         return x
 
     def has_more(self):
-        """Return True iff the iterator has no more objects to produce.
+        """Return True iff the iterator has more objects to produce.
         """
         try:
             x = self.__next__()

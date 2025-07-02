@@ -1,12 +1,10 @@
 import collections
 from collections.abc import Iterator
-import subprocess
 import json
+import subprocess
+import os
 
-import reduce_util
-
-REDUCE_BUFFER_FILE = '/tmp/micro-reduce_buffer.tsv'
-SORT_BUFFER_FILE = '/tmp/micro-sort_buffer.tsv'
+import reduce_util as ru
 
 class Worker:
 
@@ -18,28 +16,29 @@ class Worker:
 
 
     def map_reduce(self, src: str, dst: str):
-        # save the map output as a text file
-        with open(REDUCE_BUFFER_FILE, 'w') as fp:
+
+        stem = os.path.basename(src)
+        sort_input_buf = f'/tmp/mapout-{stem}.tsv'
+        sort_output_buf = f'/tmp/sortout-{stem}.tsv'
+
+        # save the map output 
+        with open(sort_input_buf, 'w') as fp:
             for line in open(src):
                 for key, value in self.map(line):
-                    fp.write(json.dumps(key) + '\t'
-                             + json.dumps(value) + '\n')
+                    fp.write(ru.kv_to_line(key, value))
+
         # sort the map output
-        sort_cmd = 'LC_ALL=C sort'
-        sort_inp = REDUCE_BUFFER_FILE
-        sort_outp = SORT_BUFFER_FILE
-        command = f'{sort_cmd} -k1,2 < {sort_inp} > {sort_outp}'
+        command = ru.sort_command(sort_input_buf, sort_output_buf)
         subprocess.check_call(command, shell=True)
 
-        # create a generator for the pairs
+        # create a generator for the sorted pairs 
         def pair_generator():
-            for line in open(SORT_BUFFER_FILE):
-                str_key, str_value = line.rstrip().split('\t')
-                yield json.loads(str_key), json.loads(str_value)
-                
-        # convert to the format for calling reduce
+            for line in open(sort_output_buf):
+                yield ru.kv_from_line(line)
+
+        # convert pair_generator and invoke and save reduce outputs
         with open(dst, 'w') as fp:
-            for key, values in reduce_util.ReduceReady(pair_generator()):
+            for key, values in ru.ReduceReady(pair_generator()):
                 for reduced_value in self.reduce(key, values):
                     pair = (key, reduced_value)
                     fp.write(str(pair) + '\n')
