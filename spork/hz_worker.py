@@ -1,3 +1,11 @@
+import json
+import os
+import shlex
+from subprocess import Popen, PIPE
+
+import reduce_util
+
+
 class Worker:
     """An abstract worker for map-reduce tasks.
     """
@@ -13,7 +21,7 @@ class Worker:
         with open(dst, 'w') as fp:
             for line in open(src):
                 for x in self.map(line):
-                    fp.write(x + '\n')
+                    fp.write(str(x) + '\n')
 
     def map(self, x):
         """Yield one or more items. 
@@ -25,13 +33,45 @@ class Worker:
         assert False, unimplemented
 
     # TODO
-    def scatter_keyed_shards(self, src_worker_name, src, dst, workers):
-        """Shard src by key, and send shards to workers for sorting by key.
+    # upload cloud config for workers and keypair?
+    # do_mapscatter src dst worker_name: saves key/value pairs and distributes them [to sorts]
+    # do_gather src dst 
 
-        Names of shards are {dst}-from-{src_worker_name} so they
-        can be collected.
+    def _load_config(self, config_file):
+        with open(config_file) as fp:
+            return json.load(fp)
+
+    def do_scatter_keyed_shards(self, src, dst, config_file, this_worker):
+        """Run mapper on src and distribute shards to co-workers. 
+
+        Distributed shards are sorted by key, and named from-{this_worker}-{dst}.
         """
-        ...
+        config = self._load_config(config_file)
+        coworkers = config['workers']
+        keypair_file = config['keypair_file']
+        cloud_username = config['cloud_username']
+        
+        # set up destination processes
+        worker_env  = os.environ.copy()
+        worker_env['LC'] = 'ALL'
+        def sh_tokens(worker):
+            return (['ssh', '-i', keypair_file]
+                    + [f'{cloud_username}@{worker}']
+                    + shlex.split(f'sort -k1 > from-{this_worker}-{dst}'))
+        coworker_processes = [
+            Popen(sh_tokens(worker), text=True, stdin=PIPE, env=worker_env)
+            for worker in coworkers
+        ]
+        # run the map and distribute the data
+        for line in open(src):
+            for key, val in self.map(line):
+                key_value_line = f'{str(key)}\t{str(val)}\n'
+                worker_idx = hash(str(key)) % len(coworkers)
+                coworker_processes[worker_idx].stdin.write(key_value_line)
+        # close the worker processes
+        for proc in coworker_processes:
+            proc.stdin.close()
+            proc.wait()
         
     # TODO
     def do_gather_reduce(self, src, dst, workers):
