@@ -5,6 +5,7 @@ import ast
 import collections
 import fire
 import json
+import logging
 import os
 from pprint import pprint
 from subprocess import Popen, PIPE
@@ -53,18 +54,23 @@ class Cloud(CloudBase):
     def ssh(self, command):
         """Run a shell command on all workers sequentially.
         """
+        sample_command = f'ssh {self.ssh_args()} {self.workers[0]} {command}'
+        logging.info(f'sample command: {sample_command}')
         for worker in self.workers:
             proc = run_subproc(
-                self.worker_ssh_toks(worker, command),
+                shlex.split(f'ssh {self.ssh_args()} {worker} {command}'),
                 text=True, capture_output=True)
             self._report(proc, worker)
                 
     def sshp(self, command):
         """Run a shell command on all workers in parallel.
         """
+        sample_command = f'ssh {self.ssh_args()} {self.workers[0]} {command}'
+        logging.info(f'sample command: {sample_command}')
         processes = [
-            Popen(self.worker_ssh_toks(worker, command),
-                  text=True, stderr=PIPE, stdout=PIPE)
+            Popen(
+                shlex.split(f'ssh {self.ssh_args()} {worker} {command}'),
+                text=True, stderr=PIPE, stdout=PIPE)
             for worker in self.workers]
         self._completion_progress(processes)
         for proc, worker in zip(processes, self.workers):
@@ -74,34 +80,42 @@ class Cloud(CloudBase):
     def ssh1(self, command):
         """Run a shell command on one worker.
         """
+        sample_command = f'ssh {self.ssh_args()} {self.workers[0]} {command}'
+        logging.info(f'sample command: {sample_command}')
         worker = self.workers[0]
         proc = run_subproc(
-            self.worker_ssh_toks(worker, command),
+            shlex.split(f'ssh {self.ssh_args()} {worker} {command}'),
             text=True, capture_output=True)
         self._report(proc, worker)
 
     def upload(self, filenames):
         """Copy a file to all workers.
         """
+        sample_command = (
+            f'scp {self.scp_args()} {filenames}' 
+            + f' {self.cloud_username}@{self.workers[0]}:')
+        logging.info(f'sample command: {sample_command}')
         for worker in tqdm(self.workers):
-            print("**** upload", ' '.join(self.worker_scp_toks(worker, filenames)))
+            scp_toks = shlex.split(
+                f'scp {self.scp_args()} {filenames}' 
+                + f' {self.cloud_username}@{worker}:')
             proc = run_subproc(
-                self.worker_scp_toks(worker, filenames),
-                text=True, capture_output=True)
+                scp_toks, text=True, capture_output=True)
             self._report(proc, worker)
 
     def setup(self, local_files=None):
         """Commands needed to initialize an ec2 cluster.
         """
-        print('installing pip')
+        logging.info('installing pip')
         self.sshp("sudo yum install python3-pip -y")
-        print('installing fire')
+        logging.info('installing fire')
         self.sshp("pip3 install fire")
-        print('uploading core')
+        logging.info('uploading core')
         self.upload(
             f"hz_worker.py reduce_util.py {WORKER_FILENAME} {self.keypair_file}")
         self.sshp(f"chmod 400 {self.keypair_file}")
         if local_files is not None:
+            logging.info(f'uploading local files {local_files}')
             self.upload(" ".join(local_files.split(",")))
 
 class FileSystem(Cloud):
@@ -109,15 +123,16 @@ class FileSystem(Cloud):
     def put(self, src, dst):
         """Shard a local file and upload shards to the workers.
         """
+        sample_command = f'cat {src} | ssh {self.ssh_args()} {self.workers[0]} cat > {dst}'
+        logging.info(f'sample command: {sample_command}')
         line_ctr = collections.Counter()
         # create a process for each worker that can accept text lines
         # via its stdin
-        def sh_tokens(worker):
-            return (['ssh', '-i', self.keypair_file]
-                    + [f'{self.cloud_username}@{worker}']
-                    + shlex.split(f'cat > {dst}'))
         worker_processes = [
-            Popen(sh_tokens(worker), text=True, stdin=PIPE)
+            Popen(
+                shlex.split(
+                    f'ssh {self.ssh_args()} {worker} cat > {dst}'),
+                text=True, stdin=PIPE)
             for worker in self.workers
         ]
         # upload the local file
@@ -139,15 +154,15 @@ class FileSystem(Cloud):
         """Get remote shards and collect them into a local file.
         """
         line_ctr = collections.Counter()
-        def sh_tokens(worker):
-            return (['ssh', '-i', self.keypair_file]
-                    + [f'{self.cloud_username}@{worker}']
-                    + shlex.split(f'cat < {src}'))
+        sample_command = f'ssh {self.ssh_args()} {self.workers[0]} cat < {src} | cat > {dst}'
+        logging.info(f'sample command: {sample_command}')
         with open(dst, 'w') as fp:
             for worker in tqdm(self.workers):
                 # download the data from that worker to local file
                 proc = Popen(
-                    sh_tokens(worker), text=True, stdout=PIPE)
+                    shlex.split(
+                        f'ssh {self.ssh_args()} {worker} cat < {src}'),
+                    text=True, stdout=PIPE)
                 for line in proc.stdout:
                     fp.write(line)
                     # record some statistics
@@ -197,12 +212,15 @@ class Driver(Cloud):
         # shuffle phase - cannot use sshp since each command mentions
         # is a different this_worker
         def shuffle_command(worker):
-            return (f'python3 -m fire {main_script} {main_class}'
+            return (f'ssh {self.ssh_args()} {worker}'
+                    + f' python3 -m fire {main_script} {main_class}'
                     + f' do_map_and_shuffle -src {src}'
                     + f' --this_worker {worker}')
+        sample_command = shuffle_command(self.workers[0])
+        logging.info(f'sample command: {sample_command}')
         processes = [
             Popen(
-                self.worker_ssh_toks(worker, shuffle_command(worker)),
+                shlex.split(shuffle_command(worker)),
                 text=True, stderr=PIPE, stdout=PIPE)
             for worker in self.workers]
         self._completion_progress(processes)
@@ -217,6 +235,7 @@ class Driver(Cloud):
                   + f' --worker_file {WORKER_FILENAME}')
     
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     if len(sys.argv) > 1:
         fire.Fire(dict(
             fs = FileSystem,

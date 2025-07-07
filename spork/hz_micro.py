@@ -28,7 +28,8 @@ class Worker:
                     fp.write(ru.kv_to_line(key, value))
 
         # sort the map output
-        command = ru.sort_command(sort_input_buf, sort_output_buf)
+        command = (f'LC_ALL=C sort -k1,2'
+                   + f' -o {sort_output_buf} {sort_input_buf}')
         subprocess.check_call(command, shell=True)
 
         # create a generator for the sorted pairs 

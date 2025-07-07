@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 import json
+import logging
 import shlex
 from subprocess import Popen, PIPE, check_call
 import sys
@@ -12,7 +13,7 @@ CLOUD_USERNAME = 'ec2-user'
 KEYPAIR_FILE = 'hazsoup.pem'
 
 class CloudBase:
-    """Base class for working with an ec2 cloud.
+    """Base class for using an ec2 cloud.
     """
     def __init__(self):
         """Loads worker names from workers.txt
@@ -28,33 +29,17 @@ class CloudBase:
             print(f'warning: no config at {worker_file}')
             self.workers = None
 
-    def ssh_args(self, worker) -> str:
-        """Arguments for an ssh/scp command invoking the worker.
+    def ssh_args(self) -> str:
+        """Arguments for an ssh command invoking the worker.
         """
         return (f'-i {self.keypair_file} -o StrictHostKeyChecking=no'
-                + f' {self.cloud_username}@{worker}')
+                + f' -l {self.cloud_username}')
 
-    def worker_ssh_toks(self, worker, shell_cmd) -> list[str]:
-        """Returns the tokens in an ssh command invoking a worker.
+    def scp_args(self) -> str:
+        """Arguments for an scp command invoking the worker.
         """
-        return (
-            ['ssh'] 
-            + shlex.split(self.ssh_args(worker))
-            + shlex.split(shell_cmd)
-        )
+        return (f'-i {self.keypair_file} -o StrictHostKeyChecking=no')
 
-    def worker_scp_toks(self, worker, filenames) -> list[str]:
-        """Returns the tokens to scp the files to the worker.
-        """
-        # add colon to machine name to specify default dir for scp dst
-        ssh_args = shlex.split(self.ssh_args(worker))
-        scp_args = ssh_args[:-1] + [f'{ssh_args[-1]}:']
-        return (
-            ['scp']
-            + scp_args[:-1]
-            + shlex.split(filenames) 
-            + [scp_args[-1]]
-        )
 
 class Worker(CloudBase):
     """An abstract worker for map-reduce tasks.
@@ -73,10 +58,8 @@ class Worker(CloudBase):
         assert False, 'unimplemented'
 
 
-    # invoke with py -m fire hs_wc.py MyWorker do_map SRC DST
-
     def do_map(self, src, dst):
-        """
+        """Invoked from command line for map-only jobs.
         """
         with open(dst, 'w') as fp:
             for line in open(src):
@@ -84,24 +67,25 @@ class Worker(CloudBase):
                     fp.write(str(x) + '\n')
 
     def _shard_bufname(self, src, worker_idx):
+        """Name of a single output shard from a worker.
+        """
         stem = os.path.basename(src)
         return f'sortout-{stem}-from-w{worker_idx:02d}.tsv'
 
     def do_map_and_shuffle(self, src, this_worker):
         """Run mapper on src and distribute shards to co-workers. 
 
-        Distributed shards are sorted by key, and named from-{this_worker}-{dst}.
+        Distributed shards are sorted by key.
         """
         coworkers = self.workers
         # set up destination processes - using shell=True to allow
-        # LC=all options to sort to be passed in
+        # LC_ALL=C options to sort to be passed in
         def sort_pipe_command_str(worker):
-            sort_command = ru.sort_command(
-                src='', 
-                dst=self._shard_bufname(src, coworkers.index(this_worker)))
-            result = f'ssh {self.ssh_args(worker)} {sort_command}'
-            print('** sort', result)
+            dst = self._shard_bufname(src, coworkers.index(this_worker))
+            result = f'ssh {self.ssh_args()} {worker} LC_ALL=C sort -k1 -o {dst}'
             return result
+        sample_command = sort_pipe_command_str(coworkers[0])
+        logging.info(f'sample command: {sample_command}')
         coworker_processes = [
             Popen(
                 sort_pipe_command_str(worker),
@@ -109,12 +93,13 @@ class Worker(CloudBase):
             for worker in coworkers
         ]
         # run the map and distribute the data to the processes
+        # TODO: something here is maybe broken....
         for line in open(src):
             for key, val in self.map(line):
-                worker_idx = ru.kv_keyhash(key) % len(coworkers)                
+                key_worker_idx = ru.kv_keyhash(key) % len(coworkers)                
                 kv_line = ru.kv_to_line(key, val)
-                coworker_processes[worker_idx].stdin.write(kv_line)
-        # close the worker processes
+                coworker_processes[key_worker_idx].stdin.write(kv_line)
+        # close the worker processes and echo any errors
         for proc, worker in zip(coworker_processes, coworkers):
             proc.stdin.close()
             proc.wait()
@@ -135,9 +120,8 @@ class Worker(CloudBase):
             self._shard_bufname(src, i) for i in range(len(coworkers))]
         stem = os.path.basename(src)
         merge_dst =  f'mergeout-{stem}.tsv'
-        merge_sort_cmd = ru.sort_command(
-            src=' '.join(incoming_shards),
-            dst=merge_dst).replace("sort ", "sort -m ")
+        merge_sort_cmd = (f'LC_ALL=C sort -k1 -o {merge_dst} '
+                          + ' '.join(incoming_shards))
         check_call(merge_sort_cmd, shell=True)
 
         # create a generator for the sorted pairs 

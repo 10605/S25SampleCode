@@ -20,11 +20,6 @@ def kv_keyhash(key) -> int:
     """
     return hash(json.dumps(key))
 
-def sort_command(src: str, dst: str) -> str:
-    """Shell command that sorts the lines in src by key.
-    """
-    return f'LC_ALL=C sort -k1,2 -o {dst} {src}'
-
 class PushBackIterator(Iterator):
     """Extended Iterator that supports peek, has_more(), and pushback()
     """
