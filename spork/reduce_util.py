@@ -2,6 +2,7 @@
 """
 
 from collections.abc import Iterator
+import hashlib
 import json
 
 def kv_to_line(key, value) -> str:
@@ -17,8 +18,12 @@ def kv_from_line(line: str) -> tuple:
     
 def kv_keyhash(key) -> int:
     """A hash code for the line-encoded key.
+
+    Note python's builtin hash() is not good enough, it is not always
+    stable across machines.
     """
-    return hash(json.dumps(key))
+    encoded_key = json.dumps(key).encode('utf8')
+    return int(hashlib.md5(encoded_key).hexdigest(), base=16)
 
 class PushBackIterator(Iterator):
     """Extended Iterator that supports peek, has_more(), and pushback()

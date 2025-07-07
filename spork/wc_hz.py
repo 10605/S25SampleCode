@@ -10,3 +10,8 @@ class WordCount(hz.Worker):
     def reduce(self, word, counts):
         yield sum(counts)
 
+if __name__ == "__main__":
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    wc = WordCount()
+    wc.do_map_and_shuffle('blue.txt', wc.workers[0])

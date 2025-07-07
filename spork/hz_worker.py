@@ -26,7 +26,7 @@ class CloudBase:
                 self.workers = [
                     worker.rstrip() for worker in fp.readlines()]
         except FileNotFoundError:
-            print(f'warning: no config at {worker_file}')
+            print(f'warning: no config at {self.worker_file}')
             self.workers = None
 
     def ssh_args(self) -> str:
@@ -85,7 +85,7 @@ class Worker(CloudBase):
             result = f'ssh {self.ssh_args()} {worker} LC_ALL=C sort -k1 -o {dst}'
             return result
         sample_command = sort_pipe_command_str(coworkers[0])
-        logging.info(f'sample command: {sample_command}')
+        logging.info(f'sample pipe: {sample_command}')
         coworker_processes = [
             Popen(
                 sort_pipe_command_str(worker),
@@ -93,7 +93,6 @@ class Worker(CloudBase):
             for worker in coworkers
         ]
         # run the map and distribute the data to the processes
-        # TODO: something here is maybe broken....
         for line in open(src):
             for key, val in self.map(line):
                 key_worker_idx = ru.kv_keyhash(key) % len(coworkers)                
@@ -135,3 +134,4 @@ class Worker(CloudBase):
                 for reduced_value in self.reduce(key, values):
                     pair = (key, reduced_value)
                     fp.write(str(pair) + '\n')
+
