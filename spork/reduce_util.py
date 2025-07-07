@@ -1,3 +1,6 @@
+"""Utilities for map-reduce.
+"""
+
 from collections.abc import Iterator
 import json
 

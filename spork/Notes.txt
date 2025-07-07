@@ -1,3 +1,8 @@
+7/3
+ - updated the config stuff
+ - wrote a Make command to launch a cluster
+   - couldn't ssh in to the cli-launched cluster though, may need some additional tweaking
+
 7/2
  Status: partly working but hz_worker.py do_map_and_scatter doesn't launch
  jobs correctly ... mainly ssh is needs to be slacker about keys and not ask
