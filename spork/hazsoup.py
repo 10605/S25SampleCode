@@ -29,7 +29,7 @@ class Cloud(CloudBase):
     def _completion_progress(self, processes, delay=0.25):
         """A progress bar for process completion.
         """
-        for n, _ in tqdm(enumerate(processes)):
+        for n in tqdm(range(len(processes))):
             finished = []
             while len(finished) < n:
                 finished = [p for p in processes if p.poll() is not None]

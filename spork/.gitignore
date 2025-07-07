@@ -2,5 +2,7 @@
 workers.txt
 *.csv
 fire_trial.py
+../__pycache__/*
 __pycache__/*
 #*
+cloud_config.json
