@@ -1,6 +1,8 @@
 7/7
  - logic all works BUT gets the wrong answer somehow for wordcount
- - problem is that hash can be different on different machines
+    - problem was that hash can be different on different machines
+
+
 
 7/3
  - updated the config stuff

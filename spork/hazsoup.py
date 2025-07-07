@@ -15,10 +15,6 @@ import sys
 import time
 from tqdm import tqdm
 
-WORKER_FILENAME = 'workers.txt'
-CLOUD_USERNAME = 'ec2-user'
-KEYPAIR_FILE = 'hazsoup.pem'
-
 from hz_worker import CloudBase
 
 class Cloud(CloudBase):
@@ -112,13 +108,16 @@ class Cloud(CloudBase):
         self.sshp("pip3 install fire")
         logging.info('uploading core')
         self.upload(
-            f"hz_worker.py reduce_util.py {WORKER_FILENAME} {self.keypair_file}")
+            f"hz_worker.py reduce_util.py "
+            + f"{self.worker_file} {self.keypair_file}")
         self.sshp(f"chmod 400 {self.keypair_file}")
         if local_files is not None:
             logging.info(f'uploading local files {local_files}')
             self.upload(" ".join(local_files.split(",")))
 
 class FileSystem(Cloud):
+    """A simple distributed filesystem.
+    """
 
     def put(self, src, dst):
         """Shard a local file and upload shards to the workers.
@@ -174,7 +173,7 @@ class FileSystem(Cloud):
         pprint(line_ctr)
 
     def head(self, src):
-        """Print the head of the output of the first worker.
+        """Print the head of a sharded file on the first worker.
         """
         worker = self.workers[0]
         proc = run_subproc(
@@ -185,7 +184,7 @@ class FileSystem(Cloud):
         print(proc.stdout, end='')
 
     def tail(self, src):
-        """Print the tail of the output of the last worker.
+        """Print the head of a sharded file on the last worker.
         """
         worker = self.workers[-1]
         proc = run_subproc(
@@ -196,21 +195,23 @@ class FileSystem(Cloud):
         print(proc.stdout, end='')
 
 class Driver(Cloud):
-    """Invokes the workers appropriately to complete a task.
+    """Invokes workers appropriately to complete a task.
     """
 
-
     def map_only(self, main_script, main_class, src, dst):
-        """Run a map-only job.
+        """A map-only job.
         """
         self.sshp(f'python3 -m fire {main_script} {main_class}'
                   + f' do_map --src {src} --dst {dst}')
 
     def map_reduce(self, main_script, main_class, src, dst):
+        """A map-reduce job.
+        """
 
         print('map and shuffle phase')
-        # shuffle phase - cannot use sshp since each command mentions
-        # is a different this_worker
+        # we can't use sshp since each command has a different
+        # --this_worker argument, so we need to duplicate some of that
+        # code
         def shuffle_command(worker):
             return (f'ssh {self.ssh_args()} {worker}'
                     + f' python3 -m fire {main_script} {main_class}'
@@ -228,11 +229,12 @@ class Driver(Cloud):
             self._report(proc, worker)
             proc.wait()
 
+        # now we can collect the shards sent to each worker and run
+        # the reduce process
         print('gather and reduce phase')
-        # rather and reduce phase
         self.sshp(f'python3 -m fire {main_script} {main_class}'
                   + f' do_gather_reduce --src {src} --dst {dst}'
-                  + f' --worker_file {WORKER_FILENAME}')
+                  + f' --worker_file {self.worker_file}')
     
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

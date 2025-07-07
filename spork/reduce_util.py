@@ -7,20 +7,25 @@ import json
 
 def kv_to_line(key, value) -> str:
     """Convert a key-value pair into a sortable line.
+
+    Specifically, running sort -k1 with LC_ALL=C option on these lines
+    will group common keys together.
     """
     return json.dumps(key) + '\t' + json.dumps(value) + '\n'
 
 def kv_from_line(line: str) -> tuple:
-    """Convert a sortable line into a key-value pair.
+    """Convert a sortable line back a key-value pair.
     """
     str_key, str_value = line.rstrip().split('\t')
     return json.loads(str_key), json.loads(str_value)
     
 def kv_keyhash(key) -> int:
-    """A hash code for the line-encoded key.
+    """A hash code for the key.
 
-    Note python's builtin hash() is not good enough, it is not always
-    stable across machines.
+    This code should be appropriate for sharding key/value pairs by
+    key, and then sorting them.  Note python's builtin hash() is not
+    good enough in a distributed context, as it is not always stable
+    across machines.
     """
     encoded_key = json.dumps(key).encode('utf8')
     return int(hashlib.md5(encoded_key).hexdigest(), base=16)
