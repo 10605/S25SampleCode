@@ -2,7 +2,7 @@
  - logic all works BUT gets the wrong answer somehow for wordcount
     - problem was that hash can be different on different machines
 
-
+ - todo
 
 7/3
  - updated the config stuff
