@@ -50,10 +50,10 @@ class RDD:
         """Reduce a key-value RDD.
         """
         if in_memory:
-            return MemoryReducer(
+            return MemoryKVReducer(
                 context=self.context, upstream=self, reduce_fn=fn)        
         else:
-            return DiskReducer(
+            return DiskKVReducer(
                 context=self.context, upstream=self, reduce_fn=fn)
 
     def collect(self) -> list:
@@ -112,7 +112,7 @@ class FlatMapper(RDD):
                 yield y
 
 @dataclass
-class MemoryReducer(RDD):
+class MemoryKVReducer(RDD):
     context: Context
     upstream: RDD
     reduce_fn: Callable
@@ -128,7 +128,7 @@ class MemoryReducer(RDD):
 
 
 @dataclass
-class DiskReducer(RDD):
+class DiskKVReducer(RDD):
     context: Context
     upstream: RDD
     reduce_fn: Callable

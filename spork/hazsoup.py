@@ -225,12 +225,12 @@ class Driver(Cloud):
                 text=True, stderr=PIPE, stdout=PIPE)
             for worker in self.workers]
         self._completion_progress(processes)
+        # figure out error reporting
         for proc, worker in tqdm(zip(processes, self.workers)):
             self._report(proc, worker)
             proc.wait()
 
-        # now we can collect the shards sent to each worker and run
-        # the reduce process
+        # now collect the shards sent to each worker and reduce
         print('gather and reduce phase')
         self.sshp(f'python3 -m fire {main_script} {main_class}'
                   + f' do_gather_reduce --src {src} --dst {dst}'

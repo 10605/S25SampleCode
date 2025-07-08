@@ -3,6 +3,12 @@
     - problem was that hash can be different on different machines
 
  - todo
+   - logging: 
+      - _report should save process logs from worker invocations
+      - _report should be used by hz_workers to save in ./logs/stderr-proc when they invoke jobs
+      - _completion_progress should (see trial.py)
+      	- output a sample command
+	- show a progress counter for a random worker process
 
 7/3
  - updated the config stuff

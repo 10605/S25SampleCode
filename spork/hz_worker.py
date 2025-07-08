@@ -104,7 +104,6 @@ class Worker(CloudBase):
                 text=True, stderr=PIPE, stdin=PIPE, shell=True)
             for worker in coworkers
         ]
-
         # run the map and distribute the data to the processes,
         # choosing the destination based on the key
         for line in open(src):
@@ -116,6 +115,7 @@ class Worker(CloudBase):
                 # and send it to the correct coworker
                 coworker_processes[key_worker_idx].stdin.write(kv_line)
 
+        # TODO: work out error handling
         # close the coworker processes and report any errors
         for proc, worker in zip(coworker_processes, coworkers):
             proc.stdin.close()
@@ -143,6 +143,7 @@ class Worker(CloudBase):
         merge_dst =  f'mergeout-{stem}.tsv'
         merge_sort_cmd = (f'LC_ALL=C sort -k1 -m -o {merge_dst} '
                           + ' '.join(incoming_shards))
+        # TODO: work out error handling
         check_call(merge_sort_cmd, shell=True)
 
         # create a generator for the sorted pairs so we can reduce

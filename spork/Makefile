@@ -14,6 +14,15 @@ launch:
 	aws ec2 describe-instances | \
 	    grep -i publicdns | cut -d\" -f4 | uniq | grep com > workers.txt
 
+# cluster test
+
+wc_hz:
+	python3 hazsoup.py cloud setup --local_files wc_hz.py	
+	python3 hazsoup.py fs put ../data/bluecorpus.txt blue.txt
+	python3 hazsoup.py run map_reduce wc_hz.py WordCount blue.txt bluecounts.txt
+	python3 hazsoup.py fs get_merge bluecounts.txt bluecounts.txt
+	grep -w this bluecounts.txt | head -10
+
 # local tests
 
 wc_nano_map_only:
@@ -32,9 +41,6 @@ wc_micro:
 	python3 -m fire wc_micro.py WordCount map_reduce ../data/bluecorpus.txt bluecounts.txt 
 	grep -w this bluecounts.txt | head -10
 
-wc_hz:
-	python3 hazsoup.py cloud setup --local_files wc_hz.py	
-	python3 hazsoup.py fs put ../data/bluecorpus.txt blue.txt
-	python3 hazsoup.py run map_reduce wc_hz.py WordCount blue.txt bluecounts.txt
-	python3 hazsoup.py fs get_merge bluecounts.txt bluecounts.txt
-	grep -w this bluecounts.txt | head -10
+wc_spork:
+	python3 wc_spork.py
+
