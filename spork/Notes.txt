@@ -3,6 +3,7 @@
     - problem was that hash can be different on different machines
 
  - todo
+   - this_worker - can I replace with a call to socket.gethostname() ?
    - logging: 
       - _report should save process logs from worker invocations
       - _report should be used by hz_workers to save in ./logs/stderr-proc when they invoke jobs
