@@ -1,15 +1,39 @@
-7/7
- - logic all works BUT gets the wrong answer somehow for wordcount
-    - problem was that hash can be different on different machines
+7/11 - working
 
- - todo
-   - this_worker - can I replace with a call to socket.gethostname() ?
+   - this_worker 
+      - can I replace with a call to socket.gethostname()  - no, that gives internal ip only
+      - better:
+      	Makefile has command to save the internal-external mapping in json
+	retrieve with: mapping = dict(json.load(open('internal-external-mapping.json')))
+
+
+   - robustness (but ec2 is 99.99 reliable - reddit says O(1) failures/wk with O(1000) instances)
+     - 1 in cloud.ssh* commands:
+       - have num mappers / reducers be different from num workers
+       - keep track of what is running where
+       - ensure a separate monitoring process is running
+         - monitor checks in on workers periodically and on failure
+	   - removes worker from active list
+	   - re-runs failed process elsewhere
+     - 2 in progress_bar
+       - test to see if a process is an outlier wrt completion
+         - if it is then restart elsewhere
+	   - if that works then mark worker as unreliable
+
    - logging: 
       - _report should save process logs from worker invocations
       - _report should be used by hz_workers to save in ./logs/stderr-proc when they invoke jobs
       - _completion_progress should (see trial.py)
       	- output a sample command
 	- show a progress counter for a random worker process
+   - should report sizes of sharded data
+
+7/7
+ - logic all works BUT gets the wrong answer somehow for wordcount
+    - problem was that hash can be different on different machines
+
+ - todo
+   - this_worker - can I replace with a call to socket.gethostname() ?
 
 7/3
  - updated the config stuff
