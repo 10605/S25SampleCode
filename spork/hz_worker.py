@@ -151,6 +151,8 @@ class Worker(CloudBase):
         # TODO: work out error handling
         check_call(merge_sort_cmd, shell=True)
 
+        # TODO: use itertools.group_by
+
         # create a generator for the sorted pairs so we can reduce
         def pair_generator():
             for line in open(merge_dst):

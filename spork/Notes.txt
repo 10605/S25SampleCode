@@ -6,6 +6,10 @@
         - which are lines: "<N> <FILE>", N is #blocks
 	- output: total blocks, avg blocks/worker, max blocks/worker, max/average
 	
+   - logging: 
+      - _report should save process logs from worker invocations
+      - from urllib.parse import quote_plus, unquote_plus to convert proc.args to filenames
+      - trial.py better progress_bar - doesn's apply, since the subprocesses can't be monitored?
 
    - robustness (but ec2 is 99.99 reliable - reddit says O(1) failures/wk with O(1000) instances)
      - 1 in cloud.ssh* commands:
@@ -19,9 +23,6 @@
        - test to see if a process is an outlier wrt completion
          - if it is then restart elsewhere
 	   - if that works then mark worker as unreliable
-
-   - logging: 
-      - _report should save process logs from worker invocations
 
 
 7/7

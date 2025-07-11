@@ -14,20 +14,17 @@ def progress_bar_trial():
     print('sample command:', processes[0].args)
 
     def split(proc):
-        unfinished, finished = [], []
+        finished = {True:[], False:[]}
         for p in proc:
-            if p.poll() is not None:
-                finished.append(p)
-            else:
-                unfinished.append(p)
-        return finished, unfinished
+            finished[p.poll() is not None].append(p)
+        return finished
 
     for n in tqdm(range(len(processes)), position=1, desc='finished'):
-        finished, unfinished = split(processes)
-        while len(finished) < n:
-            finished, unfinished = split(processes)
-            if unfinished:
-                sample_proc = unfinished[0]
+        finished = split(processes)
+        while len(finished[True]) < n:
+            finished = split(processes)
+            if finished[False]:
+                sample_proc = finished[False][0]
                 for line in tqdm(
                         sample_proc.stdout.readlines(),
                         position=0,
