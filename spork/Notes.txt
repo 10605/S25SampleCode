@@ -1,11 +1,11 @@
-7/11 - working
+7/11 - working, removed this_worker
 
-   - this_worker 
-      - can I replace with a call to socket.gethostname()  - no, that gives internal ip only
-      - better:
-      	Makefile has command to save the internal-external mapping in json
-	retrieve with: mapping = dict(json.load(open('internal-external-mapping.json')))
-
+   - should report sizes of sharded data with ls -s
+     - new FileSystem command "ls <FILEPATTERN>"
+     - in FileSystem, branch of sshp that returns all the stdouts of "ls -s <FILE>"
+        - which are lines: "<N> <FILE>", N is #blocks
+	- output: total blocks, avg blocks/worker, max blocks/worker, max/average
+	
 
    - robustness (but ec2 is 99.99 reliable - reddit says O(1) failures/wk with O(1000) instances)
      - 1 in cloud.ssh* commands:
@@ -22,11 +22,7 @@
 
    - logging: 
       - _report should save process logs from worker invocations
-      - _report should be used by hz_workers to save in ./logs/stderr-proc when they invoke jobs
-      - _completion_progress should (see trial.py)
-      	- output a sample command
-	- show a progress counter for a random worker process
-   - should report sizes of sharded data
+
 
 7/7
  - logic all works BUT gets the wrong answer somehow for wordcount

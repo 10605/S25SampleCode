@@ -209,32 +209,12 @@ class Driver(Cloud):
         """
 
         print('map and shuffle phase')
-        # we can't use sshp since each command has a different
-        # --this_worker argument, so we need to duplicate some of that
-        # code
-        def shuffle_command(worker):
-            return (f'ssh {self.ssh_args()} {worker}'
-                    + f' python3 -m fire {main_script} {main_class}'
-                    + f' do_map_and_shuffle -src {src}'
-                    + f' --this_worker {worker}')
-        sample_command = shuffle_command(self.workers[0])
-        logging.info(f'sample command: {sample_command}')
-        processes = [
-            Popen(
-                shlex.split(shuffle_command(worker)),
-                text=True, stderr=PIPE, stdout=PIPE)
-            for worker in self.workers]
-        self._completion_progress(processes)
-        # figure out error reporting
-        for proc, worker in tqdm(zip(processes, self.workers)):
-            self._report(proc, worker)
-            proc.wait()
+        self.sshp(f' python3 -m fire {main_script} {main_class}'
+                  + f' do_map_and_shuffle -src {src}')
 
-        # now collect the shards sent to each worker and reduce
         print('gather and reduce phase')
         self.sshp(f'python3 -m fire {main_script} {main_class}'
-                  + f' do_gather_reduce --src {src} --dst {dst}'
-                  + f' --worker_file {self.worker_file}')
+                  + f' do_gather_reduce --src {src} --dst {dst}')
     
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

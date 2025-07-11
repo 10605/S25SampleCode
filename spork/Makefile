@@ -1,27 +1,8 @@
-workers.txt:
-	aws ec2 describe-instances | grep -i publicdns | cut -d\" -f4 | uniq | grep com > workers.txt
-
-# unix-y way to get the info
-
-external-internal-pairs.txt:
-	aws ec2 describe-instances --query Reservations[1].Instances[:].NetworkInterfaces[:].PrivateIpAddresses[:] \
-	| grep DnsName | cut -d: -f2 > external-internal-pairs.txt
-
-external-names.txt: external-internal-pairs.txt
-	cat external-internal-pairs.txt | grep amazonaws | cut -d'"' -f2 > external-names.txt
-
-internal-names.txt: external-internal-pairs.txt
-	cat external-internal-pairs.txt | grep internal | cut -d'"' -f2 > internal-names.txt
-
-internal-external-mapping.txt: external-names.txt internal-names.txt
-	paste external-names.txt internal-names.txt > internal-external-mapping.txt
-
-# jsonic way
-
-internal-external-mapping.json:
+# workers.json maps internal machine names to their external names
+workers.json:
 	aws ec2 describe-instances \
 	--query Reservations[1].Instances[].NetworkInterfaces[].PrivateIpAddresses[0].[PrivateDnsName,Association.PublicDnsName] \
-	> internal-external-mapping.json
+	> workers.json
 
 stop:
 	aws ec2 stop-instances --instance-ids `aws ec2 describe-instances | grep -i instanceid | cut -d\" -f4`
